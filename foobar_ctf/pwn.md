@@ -76,10 +76,14 @@ It seems like we run into segmentation fault because there does not exist flag.t
 test
 test
 ```
-	Looks like the program echo back we input
-	Another thing to note that the flag.txt file content was stored at ``` DAT_00104020 ```and in the function ``` FUN_00101300 ``` we print out its content  
-	Now we want to trigger that function, but how? If we look into the function signal we would find what it's doing is basically using ``` FUN_00101300 ``` to signal-handle a signum : ``` 0xb ``` or the signum for ``` SIGSEV ```    
-	Now all we have to do is trigger ``` SIGSEV ``` and ``` FUN_00101300 ``` will give us flag  
+
+Looks like the program echo back we input
+
+Another thing to note that the flag.txt file content was stored at ``` DAT_00104020 ```and in the function ``` FUN_00101300 ``` we print out its content  
+
+Now we want to trigger that function, but how? If we look into the function signal we would find what it's doing is basically using ``` FUN_00101300 ``` to signal-handle a signum : ``` 0xb ``` or the signum for ``` SIGSEV ```
+
+Now all we have to do is trigger ``` SIGSEV ``` and ``` FUN_00101300 ``` will give us flag  
 
 ```c
   __printf_chk(1,acStack56);
