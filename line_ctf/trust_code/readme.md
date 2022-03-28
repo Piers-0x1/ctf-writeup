@@ -1,4 +1,4 @@
-# *Trust Code**
+# **Trust Code**
 
 ## Description
 > Can you trust your own code?  
@@ -80,6 +80,42 @@ void launch(void)
   __stack_chk_fail();
 }
 ```
-We can see that there is the `secret_key` read from file, and that value is stored in the `.bss` section.
+We can see that there is the `secret_key` read from file, and that value is stored in the `.bss` section.  
+```c
+void service(void)
+
+{
+  long in_FS_OFFSET;
+  undefined4 local_18;
+  undefined4 uStack20;
+  undefined4 uStack16;
+  undefined4 uStack12;
+  long local_8;
+  
+  local_8 = *(long *)(in_FS_OFFSET + 0x28);
+  printf("iv> ");
+  read(0,&local_18,0x20);
+  iv._0_4_ = local_18;
+  iv._4_4_ = uStack20;
+  iv._8_4_ = uStack16;
+  iv._12_4_ = uStack12;
+  loop();
+  if (*(long *)(in_FS_OFFSET + 0x28) == local_8) {
+    return;
+  }
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail();
+}
+```
+We can immediately recognize a buffer-overflow. It read `0x20` bytes into `local_18` which will overide `local_8` - the canary and the saved return address afterward
+Note that: there is no saved `rbp` on the stack ( this is because of the compiler optimization, which led to the `rbp` register become free to use and not only for the purpose of creating the stack frame)
+```asm
+        00101756 48  39  c8       CMP        RAX ,RCX
+        00101759 0f  85  05       JNZ        LAB_00101764
+                 00  00  00
+        0010175f 48  83  c4  28    ADD        RSP ,0x28
+        00101763 c3              RET
+```
+
 
 
