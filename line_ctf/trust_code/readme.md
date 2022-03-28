@@ -123,6 +123,7 @@ gef➤  x/4gx 0x7fffffffde40
 0x7fffffffde50: 0x7c72b79cb134760a      0x000055555555583c
 ```  
 At first, this seems really difficult to exploit due to the canary, there is no way for us to redirect the code execution  
+
 ```c
 long loop(void)
 
@@ -141,6 +142,7 @@ long loop(void)
   __stack_chk_fail();
 }
 ```  
+
 ```c
 void run(void)
 
@@ -177,6 +179,7 @@ void run(void)
 }
 ```  
 It seems like we have some kind of code execution, which we provide and stored at `local_28`, and also the maximum size of our code can only be `0x1c` bytes  
+
 ```c
 undefined8 read_code(void)
 
