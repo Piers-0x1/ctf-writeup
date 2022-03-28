@@ -107,7 +107,7 @@ void service(void)
   __stack_chk_fail();
 }
 ```
-We can immediately recognize a buffer-overflow. It read `0x20` bytes into `local_18` which will overide `local_8` - the canary and the saved return address afterward
+We can immediately recognize a buffer-overflow. It read `0x20` bytes into `local_18` which will overide `local_8` - the canary and the saved return address afterward  
 Note that: there is no saved `rbp` on the stack ( this is because of the compiler optimization, which led to the `rbp` register become free to use and not only for the purpose of creating the stack frame)
 ```asm
         00101756 48  39  c8       CMP        RAX ,RCX
