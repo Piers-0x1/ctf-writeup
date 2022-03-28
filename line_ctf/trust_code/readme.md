@@ -206,7 +206,7 @@ undefined8 read_code(void)
 }
 ```  
 Our `code` input has the maximum size of `0x30` bytes, and have to go through some sort of `decrypt`  
-```  
+
 ```c
 uchar * decrypt(uchar *param_1)
 
