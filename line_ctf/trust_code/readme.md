@@ -80,4 +80,6 @@ void launch(void)
   __stack_chk_fail();
 }
 ```
+We can see that there is the `secret_key` read from file, and that value is stored in the `.bss` section.
+
 
