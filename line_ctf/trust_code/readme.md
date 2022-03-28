@@ -116,6 +116,12 @@ Note that: there is no saved `rbp` on the stack ( this is because of the compile
         0010175f 48  83  c4  28    ADD        RSP ,0x28
         00101763 c3              RET
 ```
+Here is the stack  
+```console
+gef➤  x/4gx 0x7fffffffde40
+0x7fffffffde40: 0x4141414141414141      0x4242424242424242
+0x7fffffffde50: 0x7c72b79cb134760a      0x000055555555583c
+```
 
 
 
