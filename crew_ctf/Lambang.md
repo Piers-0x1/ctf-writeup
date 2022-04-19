@@ -119,4 +119,8 @@ int copy(EVP_PKEY_CTX *dst,EVP_PKEY_CTX *src)
 }
 ```  
 The function does check the index, the size, and the address saved in those 7 indexes carefully.  
-It works somewhat like this: Check address stored at `src` index != null --> Check address stored at `des` index, if null malloc a chunk, if not compare the size between `src` and des ( make sure that size in `des` is enough to copy from `src` to `des`) --> Copy content from `src` to `des` --> If it's a `move` then free the chunk at `src` and set the address stored at `src` index to 0 (prevent use-after-free) --> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  
+It works somewhat like this: Check address stored at `src` index != null  
+--> Check address stored at `des` index, if null malloc a chunk, if not compare the size between `src` and des ( make sure that size in `des` is enough to copy from `src` to `des`)  
+--> Copy content from `src` to `des`  
+--> If it's a `move` then free the chunk at `src` and set the address stored at `src` index to 0 (prevent use-after-free)  
+--> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  
