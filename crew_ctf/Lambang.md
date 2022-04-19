@@ -129,6 +129,6 @@ Check address stored at `src` index != null
 
 ## Exploitation  
 There was a UAF bug in `copy()`, particularly in the last 2 steps  
-` --> If it's a `move` then free the chunk at `src` and set the address stored at `src` index to 0 (prevent use-after-free)  
---> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  `
+``` --> If it's a `move` then free the chunk at `src` and set the address stored at `src` index to 0 (prevent use-after-free)  
+--> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  ```
 
