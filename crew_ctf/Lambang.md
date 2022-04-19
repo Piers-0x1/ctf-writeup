@@ -180,7 +180,19 @@ gef➤  x/10gx 0x000055555555a2a0 - 0x10
 0x55555555a2b0: 0x0000000000000000      0x0000000000020d51
 ```  
 Now we can try to overwrite this freed chunk, which is a tcache bin. We can try tcache poisoning, overwrite the fd pointer at `0x55555555a2a0`. But because this was glibc 2.32, there is an additional mitigation, which is safe-linking.  
-You can read more about it here https://research.checkpoint.com/2020/safe-linking-eliminating-a-20-year-old-malloc-exploit-primitive/
+You can read more about it here: https://research.checkpoint.com/2020/safe-linking-eliminating-a-20-year-old-malloc-exploit-primitive/  
+In short,it protects the fd pointer by signing the address with heap address. Because heap address is affted by ASLR, we thus have to leak the heap address before we can overwrite the fd pointer, or else the address we overwrite will be invalid without the signing.  
+The formula for masking: P' = P ^ (L >> 12)  
+                         P' : the masked address  
+                         P  : the original address  
+                         L  : the heap address where it's stored at  
+                         
+When there is only one chunk in tcache bin, P = 0, do the masked address is simply heap address shift left by 12 bit.  
+So when we `show()` at address `0x55555555a2a0` it simply prints out the heap address for us `0x000000055555555a`. And we can shift right by 12 bit to get the original heap base address, defeating the aslr, and thus safe-linking.  
+
+### Infoleak  
+
+
 
 
 
