@@ -122,7 +122,7 @@ int copy(EVP_PKEY_CTX *dst,EVP_PKEY_CTX *src)
 The function does check the index, the size, and the address saved in those 7 indexes carefully.  
 It works somewhat like this:  
 Check address stored at `src` index != null  
---> Check address stored at `des` index, if null malloc a chunk, if not compare the size between `src` and des ( make sure that size in `des` is enough to copy from `src` to `des`)  
+--> Check address stored at `des` index, if null malloc a chunk, if not compare the size between `src` and `des` ( make sure that size in `des` is enough to copy from `src` to `des`)  
 --> Copy content from `src` to `des`  
 --> If it's a `move` then free the chunk at `src` and set the address stored at `src` index to 0 (prevent use-after-free)  
 --> Set address at `des` index to itself (or the address provided by malloc() ), set size to `src` size  
@@ -181,7 +181,7 @@ gef➤  x/10gx 0x000055555555a2a0 - 0x10
 ```  
 Now we can try to overwrite this freed chunk, which is a tcache bin. We can try tcache poisoning, overwrite the fd pointer at `0x55555555a2a0`. But because this was glibc 2.32, there is an additional mitigation, which is safe-linking.  
 You can read more about it here: https://research.checkpoint.com/2020/safe-linking-eliminating-a-20-year-old-malloc-exploit-primitive/  
-In short,it protects the fd pointer by signing the address with heap address. Because heap address is affted by ASLR, we thus have to leak the heap address before we can overwrite the fd pointer, or else the address we overwrite will be invalid without the signing.  
+In short, it protects the fd pointer by signing the address with heap address. Because heap address is affected by ASLR, we thus have to leak the heap address before we can overwrite the fd pointer, or else the address we overwrite will be invalid without the signing.  
 The formula for masking: P' = P ^ (L >> 12)  
                          P' : the masked address  
                          P  : the original address  
