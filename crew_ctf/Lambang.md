@@ -221,7 +221,7 @@ Here are my heap chunks after some grooming. Now free it.
 gef➤  heap chunks
 Chunk(addr=0x55688c774010, size=0x490, flags=PREV_INUSE)
     [0x000055688c774010     00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00    ................]
-Chunk(addr=0x55688c7744a0, size=0x80, flags=PREV_INUSE)
+Chunk(addr=0x55688c7744a0, size=0x80, flags=! PREV_INUSE)
     [0x000055688c7744a0     00 00 00 00 00 00 00 00 10 40 77 8c 68 55 00 00    .........@w.hU..]
 gef➤  heap bins unsorted
 ───────────────────────── Unsorted Bin for arena at 0x7efe4e974ba0 ─────────────────────────
